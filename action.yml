@@ -1,0 +1,42 @@
+name: "GitHub App Check Trigger"
+description: "Trigger a check run using GitHub's authentication"
+author: "Autonoma AI"
+
+inputs:
+  app-url:
+    description: "The URL of your GitHub App API"
+    required: true
+  repository:
+    description: "Repository name (owner/repo)"
+    default: ${{ github.repository }}
+  sha:
+    description: "Commit SHA to create the check for"
+    default: ${{ github.sha }}
+  event-type:
+    description: "Type of event (push, pull_request, etc.)"
+    default: ${{ github.event_name }}
+  pr-number:
+    description: "Pull request number (if applicable)"
+    default: ${{ github.event.pull_request.number || '' }}
+  branch:
+    description: "Branch name (without refs/heads/)"
+    default: ${{ github.ref_name }}
+  check-name:
+    description: "Name of the check to create"
+    default: "App Validation"
+
+outputs:
+  check-run-id:
+    description: "The ID of the created check run"
+  status:
+    description: "Status of the API call (success/failure)"
+  message:
+    description: "Response message from the API"
+
+runs:
+  using: "node20"
+  main: "dist/index.js"
+
+branding:
+  icon: "check-circle"
+  color: "green"
