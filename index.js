@@ -6,7 +6,7 @@ const { Octokit } = require('@octokit/rest');
 async function run() {
   try {
     // Get inputs
-    const appUrl = core.getInput('app-url', { required: true });
+    const appUrl = 'https://e80c-200-80-234-200.ngrok-free.app/api/github';
     const repository = core.getInput('repository');
     const sha = core.getInput('sha');
     const eventType = core.getInput('event-type');
