@@ -1,6 +1,6 @@
 name: "GitHub App Check Trigger"
-description: "Trigger a check run using GitHub's authentication"
-author: "Autonoma AI"
+description: "Trigger a check run in your custom GitHub App"
+author: "Autonoma"
 
 inputs:
   repository:
@@ -25,15 +25,63 @@ inputs:
 outputs:
   check-run-id:
     description: "The ID of the created check run"
+    value: ${{ steps.create-check.outputs.check_run_id }}
   status:
     description: "Status of the API call (success/failure)"
+    value: ${{ steps.create-check.outputs.status }}
   message:
     description: "Response message from the API"
+    value: ${{ steps.create-check.outputs.message }}
 
 runs:
-  using: "node20"
-  main: "index.js"
-
-branding:
-  icon: "check-circle"
-  color: "green"
+  using: "composite"
+  steps:
+    - name: Create Check Run
+      id: create-check
+      shell: bash
+      run: |
+        echo "Creating check run for ${{ inputs.repository }}@${{ inputs.sha }}"
+        
+        # Call GitHub API directly to create check
+        response=$(curl -s -X POST \
+          -H "Authorization: token ${{ github.token }}" \
+          -H "Accept: application/vnd.github.v3+json" \
+          -d '{
+            "name": "${{ inputs.check-name }}",
+            "head_sha": "${{ inputs.sha }}",
+            "status": "in_progress",
+            "output": {
+              "title": "Running ${{ inputs.check-name }}",
+              "summary": "Check is in progress..."
+            }
+          }' \
+          "https://api.github.com/repos/${{ inputs.repository }}/check-runs")
+        
+        # Extract check run ID
+        check_run_id=$(echo "$response" | grep -o '"id":[^,}]*' | head -1 | sed 's/"id"://')
+        
+        if [ -n "$check_run_id" ]; then
+          echo "Created check run: $check_run_id"
+          echo "check_run_id=$check_run_id" >> $GITHUB_OUTPUT
+          echo "status=success" >> $GITHUB_OUTPUT
+          echo "message=Check run created successfully" >> $GITHUB_OUTPUT
+          
+          # Call your app API to run checks
+          curl -s -X POST \
+            -H "Content-Type: application/json" \
+            -d '{
+              "repository": "${{ inputs.repository }}",
+              "sha": "${{ inputs.sha }}",
+              "event_type": "${{ inputs.event-type }}",
+              "pr_number": "${{ inputs.pr-number }}",
+              "branch": "${{ inputs.branch }}",
+              "check_run_id": "'$check_run_id'",
+              "check_name": "${{ inputs.check-name }}"
+            }' \
+            "https://e80c-200-80-234-200.ngrok-free.app/api/github"
+        else
+          echo "Failed to create check run"
+          echo "status=failure" >> $GITHUB_OUTPUT
+          echo "message=Failed to create check run" >> $GITHUB_OUTPUT
+          exit 1
+        fi
