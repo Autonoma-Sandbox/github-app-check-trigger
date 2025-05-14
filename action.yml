@@ -18,14 +18,11 @@ inputs:
   branch:
     description: "Branch name (without refs/heads/)"
     default: ${{ github.ref_name }}
-  check-name:
-    description: "Name of the check to create"
+  test-id:
+    description: "The id of the test to run"
     default: "App Validation"
 
 outputs:
-  check-run-id:
-    description: "The ID of the created check run"
-    value: ${{ steps.create-check.outputs.check_run_id }}
   status:
     description: "Status of the API call (success/failure)"
     value: ${{ steps.create-check.outputs.status }}
@@ -36,52 +33,33 @@ outputs:
 runs:
   using: "composite"
   steps:
-    - name: Create Check Run
-      id: create-check
+    - name: Notify Service
+      id: notify-service
       shell: bash
       run: |
-        echo "Creating check run for ${{ inputs.repository }}@${{ inputs.sha }}"
+        echo "Notifying service about ${{ inputs.event-type }} event on ${{ inputs.repository }}"
         
-        # Call GitHub API directly to create check
+        # Create GitHub token header for your service to use
         response=$(curl -s -X POST \
-          -H "Authorization: token ${{ github.token }}" \
-          -H "Accept: application/vnd.github.v3+json" \
+          -H "Content-Type: application/json" \
+          -H "X-GitHub-Token: ${{ github.token }}" \
           -d '{
-            "name": "${{ inputs.check-name }}",
-            "head_sha": "${{ inputs.sha }}",
-            "status": "in_progress",
-            "output": {
-              "title": "Running ${{ inputs.check-name }}",
-              "summary": "Check is in progress..."
-            }
+            "repository": "${{ inputs.repository }}",
+            "sha": "${{ inputs.sha }}",
+            "event_type": "${{ inputs.event-type }}",
+            "pr_number": "${{ inputs.pr-number }}",
+            "branch": "${{ inputs.branch }}",
+            "test_id": "${{ inputs.test-id}}"
           }' \
-          "https://api.github.com/repos/${{ inputs.repository }}/check-runs")
+          "${{ inputs.service-url }}")
         
-        # Extract check run ID
-        check_run_id=$(echo "$response" | grep -o '"id":[^,}]*' | head -1 | sed 's/"id"://')
-        
-        if [ -n "$check_run_id" ]; then
-          echo "Created check run: $check_run_id"
-          echo "check_run_id=$check_run_id" >> $GITHUB_OUTPUT
+        # Set output based on HTTP status code
+        if [ $? -eq 0 ]; then
+          echo "Service notified successfully"
           echo "status=success" >> $GITHUB_OUTPUT
-          echo "message=Check run created successfully" >> $GITHUB_OUTPUT
-          
-          # Call your app API to run checks
-          curl -s -X POST \
-            -H "Content-Type: application/json" \
-            -d '{
-              "repository": "${{ inputs.repository }}",
-              "sha": "${{ inputs.sha }}",
-              "event_type": "${{ inputs.event-type }}",
-              "pr_number": "${{ inputs.pr-number }}",
-              "branch": "${{ inputs.branch }}",
-              "check_run_id": "'$check_run_id'",
-              "check_name": "${{ inputs.check-name }}"
-            }' \
-            "https://e80c-200-80-234-200.ngrok-free.app/api/github"
+          echo "message=Service notified successfully" >> $GITHUB_OUTPUT
         else
-          echo "Failed to create check run"
+          echo "Failed to notify service"
           echo "status=failure" >> $GITHUB_OUTPUT
-          echo "message=Failed to create check run" >> $GITHUB_OUTPUT
-          exit 1
+          echo "message=Failed to notify service" >> $GITHUB_OUTPUT
         fi
