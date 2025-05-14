@@ -34,9 +34,7 @@ outputs:
   message:
     description: "Response message from the API"
     value: ${{ steps.notify-service.outputs.message }}
-  check-id:
-    description: "ID of the created check run"
-    value: ${{ steps.create-check.outputs.check-id }}
+
 runs:
   using: "composite"
   steps:
@@ -61,46 +59,6 @@ runs:
         
         echo "owner=$OWNER" >> $GITHUB_OUTPUT
         echo "repo=$REPO" >> $GITHUB_OUTPUT
-
-    - name: Create Check Run
-      id: create-check
-      shell: bash
-      run: |
-        echo "Creating check run for ${{ inputs.repository }} at ${{ inputs.sha }}"
-        
-        # Generate a unique request ID that can be verified by your service
-        request_id=$(cat /proc/sys/kernel/random/uuid)
-        
-        # Calculate a timestamp for request validation
-        timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-        
-        # Create a check run using GitHub API with repository token
-        response=$(curl -s -X POST \
-          -H "Authorization: token ${{ github.token }}" \
-          -H "Accept: application/vnd.github.v3+json" \
-          -H "Content-Type: application/json" \
-          "https://api.github.com/repos/${{ inputs.repository }}/check-runs" \
-          -d '{
-            "name": "${{ inputs.check-name }}",
-            "head_sha": "${{ inputs.sha }}",
-            "status": "in_progress",
-            "started_at": "'$timestamp'"
-          }')
-        
-        # Extract check_id from response
-        check_id=$(echo $response | jq -r '.id')
-        
-        if [ -z "$check_id" ] || [ "$check_id" = "null" ]; then
-          echo "Failed to create check run"
-          echo "status=failure" >> $GITHUB_OUTPUT
-          echo "message=Failed to create check run" >> $GITHUB_OUTPUT
-          exit 1
-        else
-          echo "Successfully created check run with ID: $check_id"
-          echo "check-id=$check_id" >> $GITHUB_OUTPUT
-          echo "status=success" >> $GITHUB_OUTPUT
-          echo "message=Successfully created check run" >> $GITHUB_OUTPUT
-        fi
         
     - name: Notify Service
       id: notify-service
@@ -137,7 +95,6 @@ runs:
             "pr_number": "${{ inputs.pr-number }}",
             "branch": "${{ inputs.branch }}",
             "test_id": "${{ inputs.test-id }}",
-            "check_id": "${{ steps.create-check.outputs.check-id }}",
             "request_id": "'$request_id'",
             "github_run_id": "${{ github.run_id }}",
             "github_run_number": "${{ github.run_number }}",
