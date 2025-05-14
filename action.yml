@@ -46,6 +46,22 @@ runs:
         sudo apt-get update
         sudo apt-get install -y jq
 
+    - name: Extract Repository Information
+      id: repo-info
+      shell: bash
+      run: |
+        # Extract owner and repo name from repository
+        REPO_FULL="${{ inputs.repository }}"
+        OWNER=$(echo $REPO_FULL | cut -d'/' -f1)
+        REPO=$(echo $REPO_FULL | cut -d'/' -f2)
+        
+        echo "Repository: $REPO_FULL"
+        echo "Owner: $OWNER"
+        echo "Repo: $REPO"
+        
+        echo "owner=$OWNER" >> $GITHUB_OUTPUT
+        echo "repo=$REPO" >> $GITHUB_OUTPUT
+
     - name: Create Check Run
       id: create-check
       shell: bash
@@ -112,6 +128,8 @@ runs:
           -H "X-Request-ID: $request_id" \
           -d '{
             "repository": "${{ inputs.repository }}",
+            "owner": "${{ steps.repo-info.outputs.owner }}",
+            "repo": "${{ steps.repo-info.outputs.repo }}",
             "repo_id": "'$repo_id'",
             "repo_node_id": "'$repo_node_id'",
             "sha": "${{ inputs.sha }}",
