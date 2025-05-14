@@ -23,10 +23,6 @@ inputs:
   check-name:
     description: "Name of the check to create"
     default: "App Validation"
-  api-key:
-    description: "API key for authentication with your service"
-    required: false
-    default: ""
 outputs:
   status:
     description: "Status of the API call (success/failure)"
