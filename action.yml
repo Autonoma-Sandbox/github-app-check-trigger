@@ -59,7 +59,6 @@ runs:
     - name: Notify Service
       id: notify-service
       shell: bash
-      if: steps.create-check.outputs.status == 'success'
       run: |
         echo "Notifying service about ${{ inputs.event-type }} event on ${{ inputs.repository }}"
         
