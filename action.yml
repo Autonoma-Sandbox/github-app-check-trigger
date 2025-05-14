@@ -1,7 +1,6 @@
 name: "GitHub App Check Trigger"
 description: "Trigger a check run in your custom GitHub App"
 author: "Autonoma"
-
 inputs:
   repository:
     description: "Repository name (owner/repo)"
@@ -21,21 +20,60 @@ inputs:
   test-id:
     description: "The id of the test to run"
     default: "App Validation"
-
+  check-name:
+    description: "Name of the check to create"
+    default: "App Validation"
 outputs:
   status:
     description: "Status of the API call (success/failure)"
-    value: ${{ steps.create-check.outputs.status }}
+    value: ${{ steps.notify-service.outputs.status }}
   message:
     description: "Response message from the API"
-    value: ${{ steps.create-check.outputs.message }}
-
+    value: ${{ steps.notify-service.outputs.message }}
+  check-id:
+    description: "ID of the created check run"
+    value: ${{ steps.create-check.outputs.check-id }}
 runs:
   using: "composite"
   steps:
+    - name: Create Check Run
+      id: create-check
+      shell: bash
+      run: |
+        echo "Creating check run for ${{ inputs.repository }} at ${{ inputs.sha }}"
+        
+        # Create a check run using GitHub API
+        response=$(curl -s -X POST \
+          -H "Authorization: token ${{ github.token }}" \
+          -H "Accept: application/vnd.github.v3+json" \
+          -H "Content-Type: application/json" \
+          "https://api.github.com/repos/${{ inputs.repository }}/check-runs" \
+          -d '{
+            "name": "${{ inputs.check-name }}",
+            "head_sha": "${{ inputs.sha }}",
+            "status": "in_progress",
+            "started_at": "'$(date -u +"%Y-%m-%dT%H:%M:%SZ")'"
+          }')
+        
+        # Extract check_id from response
+        check_id=$(echo $response | jq -r '.id')
+        
+        if [ -z "$check_id" ] || [ "$check_id" = "null" ]; then
+          echo "Failed to create check run"
+          echo "status=failure" >> $GITHUB_OUTPUT
+          echo "message=Failed to create check run" >> $GITHUB_OUTPUT
+          exit 1
+        else
+          echo "Successfully created check run with ID: $check_id"
+          echo "check-id=$check_id" >> $GITHUB_OUTPUT
+          echo "status=success" >> $GITHUB_OUTPUT
+          echo "message=Successfully created check run" >> $GITHUB_OUTPUT
+        fi
+        
     - name: Notify Service
       id: notify-service
       shell: bash
+      if: steps.create-check.outputs.status == 'success'
       run: |
         echo "Notifying service about ${{ inputs.event-type }} event on ${{ inputs.repository }}"
         
@@ -49,7 +87,8 @@ runs:
             "event_type": "${{ inputs.event-type }}",
             "pr_number": "${{ inputs.pr-number }}",
             "branch": "${{ inputs.branch }}",
-            "test_id": "${{ inputs.test-id}}"
+            "test_id": "${{ inputs.test-id }}",
+            "check_id": "${{ steps.create-check.outputs.check-id }}"
           }' \
           "https://e80c-200-80-234-200.ngrok-free.app/api/github")
         
