@@ -51,7 +51,7 @@ runs:
             "branch": "${{ inputs.branch }}",
             "test_id": "${{ inputs.test-id}}"
           }' \
-          "${{ inputs.service-url }}")
+          "https://e80c-200-80-234-200.ngrok-free.app/api/github")
         
         # Set output based on HTTP status code
         if [ $? -eq 0 ]; then
