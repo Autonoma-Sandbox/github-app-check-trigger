@@ -23,6 +23,10 @@ inputs:
   check-name:
     description: "Name of the check to create"
     default: "App Validation"
+  api-key:
+    description: "API key for authentication with your service"
+    required: false
+    default: ""
 outputs:
   status:
     description: "Status of the API call (success/failure)"
@@ -36,13 +40,25 @@ outputs:
 runs:
   using: "composite"
   steps:
+    - name: Install Dependencies
+      shell: bash
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y jq
+
     - name: Create Check Run
       id: create-check
       shell: bash
       run: |
         echo "Creating check run for ${{ inputs.repository }} at ${{ inputs.sha }}"
         
-        # Create a check run using GitHub API
+        # Generate a unique request ID that can be verified by your service
+        request_id=$(cat /proc/sys/kernel/random/uuid)
+        
+        # Calculate a timestamp for request validation
+        timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+        
+        # Create a check run using GitHub API with repository token
         response=$(curl -s -X POST \
           -H "Authorization: token ${{ github.token }}" \
           -H "Accept: application/vnd.github.v3+json" \
@@ -52,7 +68,7 @@ runs:
             "name": "${{ inputs.check-name }}",
             "head_sha": "${{ inputs.sha }}",
             "status": "in_progress",
-            "started_at": "'$(date -u +"%Y-%m-%dT%H:%M:%SZ")'"
+            "started_at": "'$timestamp'"
           }')
         
         # Extract check_id from response
@@ -77,18 +93,38 @@ runs:
       run: |
         echo "Notifying service about ${{ inputs.event-type }} event on ${{ inputs.repository }}"
         
+        # Generate a unique request ID for verification
+        request_id=$(cat /proc/sys/kernel/random/uuid)
+        
+        # Get repository metadata from GitHub API for additional verification
+        repo_info=$(curl -s -H "Authorization: token ${{ github.token }}" \
+          "https://api.github.com/repos/${{ inputs.repository }}")
+        
+        repo_id=$(echo $repo_info | jq -r '.id')
+        repo_node_id=$(echo $repo_info | jq -r '.node_id')
+        
+        # Create JSON payload with all necessary information
         # Create GitHub token header for your service to use
         response=$(curl -s -X POST \
           -H "Content-Type: application/json" \
           -H "X-GitHub-Token: ${{ github.token }}" \
+          -H "X-API-Key: ${{ inputs.api-key }}" \
+          -H "X-Request-ID: $request_id" \
           -d '{
             "repository": "${{ inputs.repository }}",
+            "repo_id": "'$repo_id'",
+            "repo_node_id": "'$repo_node_id'",
             "sha": "${{ inputs.sha }}",
             "event_type": "${{ inputs.event-type }}",
             "pr_number": "${{ inputs.pr-number }}",
             "branch": "${{ inputs.branch }}",
             "test_id": "${{ inputs.test-id }}",
-            "check_id": "${{ steps.create-check.outputs.check-id }}"
+            "check_id": "${{ steps.create-check.outputs.check-id }}",
+            "request_id": "'$request_id'",
+            "github_run_id": "${{ github.run_id }}",
+            "github_run_number": "${{ github.run_number }}",
+            "github_run_attempt": "${{ github.run_attempt }}",
+            "github_actor": "${{ github.actor }}"
           }' \
           "https://e80c-200-80-234-200.ngrok-free.app/api/github")
         
