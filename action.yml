@@ -96,7 +96,7 @@ runs:
             "github_run_attempt": "${{ github.run_attempt }}",
             "github_actor": "${{ github.actor }}"
           }' \
-          "https://e80c-200-80-234-200.ngrok-free.app/api/github")
+          "https://autonoma.app/api/github")
         
         # Set output based on HTTP status code
         if [ $? -eq 0 ]; then
