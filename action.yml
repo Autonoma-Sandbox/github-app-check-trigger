@@ -1,35 +1,29 @@
-name: "GitHub App Check Trigger"
-description: "Trigger a check run in your custom GitHub App"
+name: "Autonoma Run Test Trigger"
+description: "Trigger a test run in Autonoma AI"
 author: "Autonoma"
 inputs:
-  repository:
-    description: "Repository name (owner/repo)"
-    default: ${{ github.repository }}
-  sha:
-    description: "Commit SHA to create the check for"
-    default: ${{ github.sha }}
-  event-type:
-    description: "Type of event (push, pull_request, etc.)"
-    default: ${{ github.event_name }}
-  pr-number:
-    description: "Pull request number (if applicable)"
-    default: ${{ github.event.pull_request.number || '' }}
-  branch:
-    description: "Branch name (without refs/heads/)"
-    default: ${{ github.ref_name }}
+  test-type:
+    description: "The type of test to run (folder or test)"
+    default: "folder"
   test-id:
-    description: "The id of the test to run"
-    default: "App Validation"
-  check-name:
-    description: "Name of the check to create"
-    default: "App Validation"
+    description: "The id of the test or folder to run"
+    default: ""
+  client-id:
+    description: "The client id of an api key generated in Autonoma's platform"
+    default: ""
+  client-secret:
+    description: "The client secret of an api key generated in Autonoma's platform"
+    default: ""
 outputs:
   status:
-    description: "Status of the API call (success/failure)"
+    description: "Status of the Autonoma test call (success/failure)"
     value: ${{ steps.notify-service.outputs.status }}
   message:
-    description: "Response message from the API"
+    description: "Response message from Autonoma"
     value: ${{ steps.notify-service.outputs.message }}
+  url:
+    description: "URL to view the test run in Autonoma"
+    value: ${{ steps.notify-service.outputs.url }}
 
 runs:
   using: "composite"
@@ -39,72 +33,37 @@ runs:
       run: |
         sudo apt-get update
         sudo apt-get install -y jq
-
-    - name: Extract Repository Information
-      id: repo-info
-      shell: bash
-      run: |
-        # Extract owner and repo name from repository
-        REPO_FULL="${{ inputs.repository }}"
-        OWNER=$(echo $REPO_FULL | cut -d'/' -f1)
-        REPO=$(echo $REPO_FULL | cut -d'/' -f2)
-        
-        echo "Repository: $REPO_FULL"
-        echo "Owner: $OWNER"
-        echo "Repo: $REPO"
-        
-        echo "owner=$OWNER" >> $GITHUB_OUTPUT
-        echo "repo=$REPO" >> $GITHUB_OUTPUT
-        
     - name: Notify Service
       id: notify-service
       shell: bash
       run: |
-        echo "Notifying service about ${{ inputs.event-type }} event on ${{ inputs.repository }}"
-        
-        # Generate a unique request ID for verification
-        request_id=$(cat /proc/sys/kernel/random/uuid)
-        
-        # Get repository metadata from GitHub API for additional verification
-        repo_info=$(curl -s -H "Authorization: token ${{ github.token }}" \
-          "https://api.github.com/repos/${{ inputs.repository }}")
-        
-        repo_id=$(echo $repo_info | jq -r '.id')
-        repo_node_id=$(echo $repo_info | jq -r '.node_id')
-        
-        # Create JSON payload with all necessary information
-        # Create GitHub token header for your service to use
-        response=$(curl -s -X POST \
+        # Make the API call and capture both response and status code
+        response=$(curl -s -w "\n%{http_code}" -X POST \
           -H "Content-Type: application/json" \
-          -H "X-GitHub-Token: ${{ github.token }}" \
-          -H "X-API-Key: ${{ inputs.api-key }}" \
-          -H "X-Request-ID: $request_id" \
+          -H "autonoma-client-id: ${{ inputs.client-id }}" \
+          -H "autonoma-client-secret: ${{ inputs.client-secret }}" \
           -d '{
-            "repository": "${{ inputs.repository }}",
-            "owner": "${{ steps.repo-info.outputs.owner }}",
-            "repo": "${{ steps.repo-info.outputs.repo }}",
-            "repo_id": "'$repo_id'",
-            "repo_node_id": "'$repo_node_id'",
-            "sha": "${{ inputs.sha }}",
-            "event_type": "${{ inputs.event-type }}",
-            "pr_number": "${{ inputs.pr-number }}",
-            "branch": "${{ inputs.branch }}",
-            "test_id": "${{ inputs.test-id }}",
-            "request_id": "'$request_id'",
-            "github_run_id": "${{ github.run_id }}",
-            "github_run_number": "${{ github.run_number }}",
-            "github_run_attempt": "${{ github.run_attempt }}",
-            "github_actor": "${{ github.actor }}"
+            "test_id": "${{ inputs.test-id }}"
           }' \
-          "https://autonoma.app/api/github")
+          "https://api.prod.autonoma.app/v1/run/${{ inputs.test-type }}/${{ inputs.test-id }}")
         
-        # Set output based on HTTP status code
-        if [ $? -eq 0 ]; then
+        # Extract the HTTP status code (last line)
+        http_code=$(echo "$response" | tail -n1)
+        
+        # Extract the actual response (all lines except the last)
+        api_response=$(echo "$response" | head -n -1)
+        
+        if [ "$http_code" -eq 201 ]; then
+          message=$(echo "$api_response" | jq -r '.message')
+          url=$(echo "$api_response" | jq -r '.url')
+          
           echo "Service notified successfully"
           echo "status=success" >> $GITHUB_OUTPUT
-          echo "message=Service notified successfully" >> $GITHUB_OUTPUT
+          echo "message=$message" >> $GITHUB_OUTPUT
+          echo "url=$url" >> $GITHUB_OUTPUT
         else
-          echo "Failed to notify service"
+          echo "Failed to notify service (HTTP $http_code)"
           echo "status=failure" >> $GITHUB_OUTPUT
-          echo "message=Failed to notify service" >> $GITHUB_OUTPUT
+          echo "message=Failed to notify Autonoma, HTTP status: $http_code" >> $GITHUB_OUTPUT
+          echo "url=" >> $GITHUB_OUTPUT
         fi
